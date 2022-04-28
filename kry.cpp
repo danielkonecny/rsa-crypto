@@ -9,8 +9,6 @@
 #include <getopt.h>
 #include <gmp.h>
 
-#include "kry.h"
-
 using namespace std;
 
 enum Mode {
@@ -41,11 +39,9 @@ long long int load_integer(char *numberAsChars, int base) {
     return numberAsInt;
 }
 
-Mode parse_params(int argc, char *argv[], vector<long long int> *numbers) {
+Mode parse_params(int argc, char *argv[], vector<char *> *params) {
     int option;
-    vector<char *> numbers_as_strings;
-
-    Mode mode;
+    Mode mode = F;
 
     while ((option = getopt(argc, argv, "gedb")) != -1) {
         switch (option) {
@@ -69,49 +65,19 @@ Mode parse_params(int argc, char *argv[], vector<long long int> *numbers) {
     }
 
     for (; optind < argc; optind++) {
-        numbers_as_strings.push_back(argv[optind]);
-    }
-
-    switch (mode) {
-        case G:
-            if (numbers_as_strings.size() != 1) {
-                mode = F;
-            } else {
-                numbers->push_back(load_integer(numbers_as_strings[0], 10));
-            }
-            break;
-        case E:
-            if (numbers_as_strings.size() != 3) {
-                mode = F;
-            } else {
-                numbers->push_back(load_integer(numbers_as_strings[0], 16));
-                numbers->push_back(load_integer(numbers_as_strings[1], 16));
-                numbers->push_back(load_integer(numbers_as_strings[2], 16));
-            }
-            break;
-        case D:
-            if (numbers_as_strings.size() != 3) {
-                mode = F;
-            } else {
-                numbers->push_back(load_integer(numbers_as_strings[0], 16));
-                numbers->push_back(load_integer(numbers_as_strings[1], 16));
-                numbers->push_back(load_integer(numbers_as_strings[2], 16));
-            }
-            break;
-        case B:
-            if (numbers_as_strings.size() != 1) {
-                mode = F;
-            } else {
-                numbers->push_back(load_integer(numbers_as_strings[0], 16));
-            }
-            break;
-        case F:
-            break;
+        params->push_back(argv[optind]);
     }
 
     return mode;
 }
 
+/**
+ * Implemented according to Method 2 - Iterative approach
+ * at https://www.geeksforgeeks.org/multiplicative-inverse-under-modulo-m/.
+ * @param d
+ * @param orig_a
+ * @param orig_m
+ */
 void mod_inverse(mpz_t d, mpz_t orig_a, mpz_t orig_m) {
     mpz_t a, m, m0, y, x, q, t;
     mpz_inits(a, m, m0, y, x, q, t, NULL);
@@ -145,6 +111,13 @@ void mod_inverse(mpz_t d, mpz_t orig_a, mpz_t orig_m) {
     mpz_clears(a, m, m0, y, x, q, t, NULL);
 }
 
+/**
+ * Non recursive approach, implemented according to Example 2
+ * at https://www.programiz.com/cpp-programming/examples/hcf-gcd.
+ * @param divisor
+ * @param orig_a
+ * @param orig_b
+ */
 void gcd(mpz_t divisor, mpz_t orig_a, mpz_t orig_b) {
     mpz_t a, b;
     mpz_inits(a, b, NULL);
@@ -242,8 +215,8 @@ int jacobi(mpz_t orig_a, mpz_t orig_n) {
 }
 
 /**
- * Inspired with: https://www.tutorialspoint.com/cplusplus-program-to-implement-the-solovay-strassen-primality-test
- * -to-check-if-a-given-number-is-prime.
+ * Inspired with: https://www.tutorialspoint.com/
+ * cplusplus-program-to-implement-the-solovay-strassen-primality-test-to-check-if-a-given-number-is-prime.
  * @param n
  * @param k
  * @return Is "n" a prime boolean.
@@ -321,51 +294,43 @@ void generate(int bits) {
     mod_inverse(d, e, phi_n);
 
     gmp_printf("%#Zx %#Zx %#Zx %#Zx %#Zx\n", p, q, n, e, d);
-    gmp_printf("p=%Zd\nq=%Zd\nn=%Zd\ne=%Zd\nd=%Zd\n", p, q, n, e, d);
 
     gmp_randclear(state);
     mpz_clears(p, q, n, phi_n, p1, q1, e, d, NULL);
 }
 
-void encrypt(int e, int n, int m) {
-    mpz_t cipher, key, modulus, message;
-    mpz_inits(cipher, key, modulus, message, NULL);
-    mpz_set_ui(key, e);
-    mpz_set_ui(modulus, n);
-    mpz_set_ui(message, m);
+void crypt(mpz_t e_or_d, mpz_t n, mpz_t m_or_c) {
+    mpz_t c_or_m;
+    mpz_init(c_or_m);
 
-    mpz_powm(cipher, message, key, modulus);
+    mpz_powm(c_or_m, m_or_c, e_or_d, n);
 
-    gmp_printf("%#Zx\n", cipher);
+    gmp_printf("%#Zx\n", c_or_m);
 
-    mpz_clears(cipher, key, modulus, message, NULL);
+    mpz_clear(c_or_m);
 }
 
 int main(int argc, char *argv[]) {
-    vector<long long int> numbers;
-    Mode mode;
-    mode = parse_params(argc, argv, &numbers);
-
-    // TODO - Load directly to mpz_t.
+    vector<char *> params;
+    Mode mode = parse_params(argc, argv, &params);
 
     switch (mode) {
         case G:
-            cout << "Generate" << endl;
-            generate(numbers[0]);
+            generate(load_integer(params[0], 10));
             break;
         case E:
-            cout << "Encode" << endl;
-            encrypt(numbers[0], numbers[1], numbers[2]);
-            break;
         case D:
-            cout << "Decode" << endl;
-            encrypt(numbers[0], numbers[1], numbers[2]);
+            mpz_t e_or_d, n, m_or_c;
+            mpz_inits(e_or_d, n, m_or_c, NULL);
+            mpz_set_str(e_or_d, params[0] + 2, 16);
+            mpz_set_str(n, params[1] + 2, 16);
+            mpz_set_str(m_or_c, params[2] + 2, 16);
+            crypt(e_or_d, n, m_or_c);
+            mpz_clears(e_or_d, n, m_or_c, NULL);
             break;
         case B:
-            cout << "Break" << endl;
             break;
         case F:
-            cout << "Fail" << endl;
             return 1;
     }
 
